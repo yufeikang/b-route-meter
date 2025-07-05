@@ -227,7 +227,7 @@ class BP35C2Adapter(AdapterInterface):
                 if complete_response and b"\r\n" in complete_response:
                     _LOGGER.debug("Complete response: %s", complete_response)
                     tokens = complete_response.split(b" ", 9)
-                    if len(tokens) < 9:
+                    if len(tokens) < 10:
                         _LOGGER.warning(
                             "Incomplete ERXUDP response: %s", complete_response
                         )
@@ -249,7 +249,7 @@ class BP35C2Adapter(AdapterInterface):
                     except Exception as e:
                         _LOGGER.debug("Error extracting IPv6 from ERXUDP: %s", e)
 
-                    echonet_payload = bytes.fromhex(tokens[9].rstrip(b"\r\n").decode())
+                    echonet_payload = bytes.fromhex(tokens[-1].rstrip(b"\r\n").decode())
                     _LOGGER.debug(
                         "ECHONET payload (%d bytes): %s",
                         len(echonet_payload),

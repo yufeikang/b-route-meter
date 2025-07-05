@@ -249,7 +249,7 @@ class BP35A1Adapter(AdapterInterface):
                     except Exception as e:
                         _LOGGER.debug("Error extracting IPv6 from ERXUDP: %s", e)
 
-                    echonet_payload = tokens[8].rstrip(b"\r\n")
+                    echonet_payload = bytes.fromhex(tokens[-1].rstrip(b"\r\n").decode())
                     _LOGGER.debug(
                         "ECHONET payload (%d bytes): %s",
                         len(echonet_payload),
