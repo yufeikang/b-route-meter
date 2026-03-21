@@ -1,201 +1,116 @@
-"""Config Flow for B-Route Meter.
+"""Config flow for B Route Smart Meter integration."""
 
-This implements the UI wizard to let user input B-route ID, password,
-serial port and adapter model in Home Assistant's "Integrations" page.
-"""
+import logging
+from typing import Any
 
+from momonga import Momonga, MomongaSkJoinFailure, MomongaSkScanFailure
+from serial.tools.list_ports import comports
+from serial.tools.list_ports_common import ListPortInfo
 import voluptuous as vol
-from homeassistant import config_entries
+
+from homeassistant.components.usb import get_serial_by_id, human_readable_device_name
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.const import CONF_DEVICE, CONF_ID, CONF_PASSWORD
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.service_info.usb import UsbServiceInfo
 
-from .const import (
-    CONF_MODEL,
-    CONF_RETRY_COUNT,
-    CONF_ROUTE_B_ID,
-    CONF_ROUTE_B_PWD,
-    CONF_SERIAL_PORT,
-    DEFAULT_MODEL,
-    DEFAULT_RETRY_COUNT,
-    DEFAULT_SERIAL_PORT,
-    DOMAIN,
-    SUPPORTED_MODELS,
-)
+from .const import DOMAIN, ENTRY_TITLE
 
-# We define the user step schema
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_ROUTE_B_ID): str,
-        vol.Required(CONF_ROUTE_B_PWD): str,
-        vol.Required(CONF_MODEL, default=DEFAULT_MODEL): vol.In(SUPPORTED_MODELS),
-        vol.Optional(CONF_SERIAL_PORT, default=DEFAULT_SERIAL_PORT): str,
-        vol.Optional(CONF_RETRY_COUNT, default=str(DEFAULT_RETRY_COUNT)): str,
-    }
-)
+_LOGGER = logging.getLogger(__name__)
 
 
-class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options flow for B-Route Meter."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        super().__init__()
-        self.entry = config_entry
-
-    async def async_step_init(self, user_input=None) -> FlowResult:
-        """Manage the options."""
-        errors = {}
-
-        if user_input is not None:
-            try:
-                user_input = {
-                    **user_input,
-                    CONF_RETRY_COUNT: int(user_input[CONF_RETRY_COUNT]),
-                }
-
-                if not 1 <= user_input[CONF_RETRY_COUNT] <= 10:
-                    errors[CONF_RETRY_COUNT] = "invalid_retry_count"
-                else:
-                    return self.async_create_entry(title="", data=user_input)
-            except ValueError:
-                errors[CONF_RETRY_COUNT] = "invalid_retry_count"
-
-        all_current = {**self.entry.data, **self.entry.options}
-
-        schema = {
-            vol.Optional(
-                CONF_SERIAL_PORT,
-                default=all_current.get(CONF_SERIAL_PORT, DEFAULT_SERIAL_PORT),
-            ): str,
-            vol.Optional(
-                CONF_RETRY_COUNT,
-                default=str(all_current.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)),
-            ): str,
-        }
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(schema),
-            errors=errors,
-        )
+def _validate_input(device: str, id: str, password: str) -> None:
+    """Validate the user input allows us to connect."""
+    with Momonga(dev=device, rbid=id, pwd=password):
+        pass
 
 
-class BRouteConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for B-Route Meter."""
+def _human_readable_device_name(port: UsbServiceInfo | ListPortInfo) -> str:
+    return human_readable_device_name(
+        port.device,
+        port.serial_number,
+        port.manufacturer,
+        port.description,
+        str(port.vid) if port.vid else None,
+        str(port.pid) if port.pid else None,
+    )
+
+
+class BRouteConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for B Route Smart Meter."""
 
     VERSION = 1
 
-    async def async_step_user(self, user_input=None) -> FlowResult:
+    device: UsbServiceInfo | None = None
+
+    @callback
+    def _get_discovered_device_id_and_name(
+        self, device_options: dict[str, ListPortInfo]
+    ) -> tuple[str | None, str | None]:
+        discovered_device_id = (
+            get_serial_by_id(self.device.device) if self.device else None
+        )
+        discovered_device = (
+            device_options.get(discovered_device_id) if discovered_device_id else None
+        )
+        discovered_device_name = (
+            _human_readable_device_name(discovered_device)
+            if discovered_device
+            else None
+        )
+        return discovered_device_id, discovered_device_name
+
+    async def _get_usb_devices(self) -> dict[str, ListPortInfo]:
+        """Return a list of available USB devices."""
+        devices = await self.hass.async_add_executor_job(comports)
+        return {get_serial_by_id(port.device): port for port in devices}
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
-
+        device_options = await self._get_usb_devices()
         if user_input is not None:
             try:
-                # Ensure retry_count is an integer
-                user_input = {
-                    **user_input,
-                    CONF_RETRY_COUNT: int(user_input[CONF_RETRY_COUNT]),
-                }
-
-                unique_id = user_input[CONF_ROUTE_B_ID]
-                await self.async_set_unique_id(unique_id)
+                await self.hass.async_add_executor_job(
+                    _validate_input,
+                    user_input[CONF_DEVICE],
+                    user_input[CONF_ID],
+                    user_input[CONF_PASSWORD],
+                )
+            except MomongaSkScanFailure:
+                errors["base"] = "cannot_connect"
+            except MomongaSkJoinFailure:
+                errors["base"] = "invalid_auth"
+            except Exception:
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                await self.async_set_unique_id(
+                    user_input[CONF_ID], raise_on_progress=False
+                )
                 self._abort_if_unique_id_configured()
+                return self.async_create_entry(title=ENTRY_TITLE, data=user_input)
 
-                if not (1 <= user_input[CONF_RETRY_COUNT] <= 10):
-                    errors[CONF_RETRY_COUNT] = "invalid_retry_count"
-                else:
-                    return self.async_create_entry(
-                        title=f"B-Route Meter ({unique_id})",
-                        data=user_input,
-                    )
-            except ValueError:
-                errors[CONF_RETRY_COUNT] = "invalid_retry_count"
-
+        discovered_device_id, discovered_device_name = (
+            self._get_discovered_device_id_and_name(device_options)
+        )
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
-            errors=errors,
-        )
-
-    async def async_step_reconfigure(
-        self,
-        user_input: dict[str, str] | None = None,
-    ) -> FlowResult:
-        """Handle reconfiguration of the integration."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            try:
-                # Ensure retry_count is an integer
-                user_input = {
-                    **user_input,
-                    CONF_RETRY_COUNT: int(user_input[CONF_RETRY_COUNT]),
-                }
-
-                if not (1 <= user_input[CONF_RETRY_COUNT] <= 10):
-                    errors[CONF_RETRY_COUNT] = "invalid_retry_count"
-                else:
-                    unique_id = user_input[CONF_ROUTE_B_ID]
-                    await self.async_set_unique_id(unique_id)
-
-                    return self.async_update_reload_and_abort(
-                        self._get_reconfigure_entry(),
-                        data=user_input,
-                    )
-            except ValueError:
-                errors[CONF_RETRY_COUNT] = "invalid_retry_count"
-
-        # 获取当前配置作为默认值
-        current_entry = self._get_reconfigure_entry()
-        current_data = current_entry.data if current_entry else {}
-
-        reconfigure_schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_ROUTE_B_ID, default=current_data.get(CONF_ROUTE_B_ID, "")
-                ): str,
-                vol.Required(
-                    CONF_ROUTE_B_PWD, default=current_data.get(CONF_ROUTE_B_PWD, "")
-                ): str,
-                vol.Required(
-                    CONF_MODEL, default=current_data.get(CONF_MODEL, DEFAULT_MODEL)
-                ): vol.In(SUPPORTED_MODELS),
-                vol.Optional(
-                    CONF_SERIAL_PORT,
-                    default=current_data.get(CONF_SERIAL_PORT, DEFAULT_SERIAL_PORT),
-                ): str,
-                vol.Optional(
-                    CONF_RETRY_COUNT,
-                    default=str(
-                        current_data.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_DEVICE, default=discovered_device_id): vol.In(
+                        {discovered_device_id: discovered_device_name}
+                        if discovered_device_id and discovered_device_name
+                        else {
+                            name: _human_readable_device_name(device)
+                            for name, device in device_options.items()
+                        }
                     ),
-                ): str,
-            }
-        )
-
-        return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=reconfigure_schema,
+                    vol.Required(CONF_ID): str,
+                    vol.Required(CONF_PASSWORD): str,
+                }
+            ),
             errors=errors,
         )
-
-    def _get_reconfigure_entry(self) -> config_entries.ConfigEntry | None:
-        """Get the current config entry for reconfiguration."""
-        # 在reconfigure流程中，通过source可以获取到entry
-        if hasattr(self, "_entry_id"):
-            for entry in self._async_current_entries():
-                if entry.entry_id == self._entry_id:
-                    return entry
-        # 如果只有一个条目，返回它
-        entries = self._async_current_entries()
-        if len(entries) == 1:
-            return entries[0]
-        return None
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> OptionsFlowHandler:
-        """Get the options flow."""
-        return OptionsFlowHandler(config_entry)

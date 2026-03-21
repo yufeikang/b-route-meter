@@ -1,343 +1,253 @@
-"""Define the BRouteDataCoordinator class."""
+"""DataUpdateCoordinator for the B Route Smart Meter integration.
 
-import asyncio
+Adds automatic recovery when momonga session dies.
+Handles ALL exception types (not just MomongaNeedToReopen) to ensure
+recovery is attempted for serial errors, OS errors, and other low-level
+failures from the Wi-SUN adapter.
+"""
+
+from dataclasses import dataclass
+from datetime import datetime
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Mapping
+import time
 
+from momonga import Momonga, MomongaError  # noqa: F401
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_DEVICE, CONF_ID, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .adapter_factory import AdapterFactory
-from .const import (
-    DEFAULT_MODEL,
-    DEFAULT_RETRY_COUNT,
-    DEFAULT_UPDATE_INTERVAL,
-    DEVICE_NAME,
-)
-
-# Diagnostic info update interval (30 minutes)
-DIAGNOSTIC_UPDATE_INTERVAL = 1800
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+MAX_REOPEN_ATTEMPTS = 5
+REOPEN_BACKOFF_BASE = 5
+REOPEN_BACKOFF_MAX = 60
+CONSECUTIVE_FAILURES_BEFORE_PREEMPTIVE_REOPEN = 2
 
-class BRouteDataCoordinator(DataUpdateCoordinator[Mapping[str, Any]]):
-    """Coordinator to fetch data from B-route meter.
 
-    Schedules regular data fetch using the appropriate adapter for the meter.
-    Runs adapter operations in a thread pool to avoid blocking.
-    """
+@dataclass
+class BRouteDeviceInfo:
+    """Static device information fetched once at setup."""
+
+    serial_number: str | None = None
+    manufacturer_code: str | None = None
+    echonet_version: str | None = None
+
+
+@dataclass
+class BRouteData:
+    """Class for data of the B Route."""
+
+    instantaneous_current_r_phase: float
+    instantaneous_current_t_phase: float
+    instantaneous_power: float
+    total_consumption: float
+    total_consumption_reverse: float | None = None
+    instantaneous_voltage_r_phase: float | None = None
+    instantaneous_voltage_t_phase: float | None = None
+    meter_timestamp: datetime | None = None
+    meter_timestamp_reverse: datetime | None = None
+    fault_status: bool | None = None
+
+
+type BRouteConfigEntry = ConfigEntry[BRouteUpdateCoordinator]
+
+
+class BRouteUpdateCoordinator(DataUpdateCoordinator[BRouteData]):
+    """The B Route update coordinator with automatic session recovery."""
+
+    device_info_data: BRouteDeviceInfo
 
     def __init__(
         self,
         hass: HomeAssistant,
-        route_b_id: str,
-        route_b_pwd: str,
-        serial_port: str,
-        retry_count: int = DEFAULT_RETRY_COUNT,
-        model: str = DEFAULT_MODEL,
+        entry: BRouteConfigEntry,
     ) -> None:
-        """Initialize the coordinator.
+        """Initialize."""
 
-        Args:
-            hass: HomeAssistant instance
-            route_b_id: B-route ID
-            route_b_pwd: B-route password
-            serial_port: Serial port device path
-            retry_count: Number of retry attempts
-            model: Model of the B-route adapter
-        """
+        self.device = entry.data[CONF_DEVICE]
+        self.bid = entry.data[CONF_ID]
+        self._password = entry.data[CONF_PASSWORD]
+
+        self.api = Momonga(dev=self.device, rbid=self.bid, pwd=self._password)
+        self.device_info_data = BRouteDeviceInfo()
+        self._consecutive_failures = 0
+
         super().__init__(
             hass,
             _LOGGER,
-            name=DEVICE_NAME,
-            update_interval=timedelta(seconds=DEFAULT_UPDATE_INTERVAL),
-            # Reduce timeout for first update, fail fast
-            request_refresh_debouncer=None,
+            name=DOMAIN,
+            config_entry=entry,
+            update_interval=DEFAULT_SCAN_INTERVAL,
         )
 
-        # Create adapter instance for the configured model
-        self.adapter = AdapterFactory.create(
-            model,
-            route_b_id=route_b_id,
-            route_b_pwd=route_b_pwd,
-            serial_port=serial_port,
+    def _fetch_device_info(self) -> BRouteDeviceInfo:
+        """Fetch static device info (called once at setup)."""
+        info = BRouteDeviceInfo()
+        try:
+            info.serial_number = self.api.get_serial_number()
+        except Exception:
+            _LOGGER.debug("Could not fetch serial number", exc_info=True)
+        time.sleep(self.api.internal_xmit_interval)
+
+        try:
+            raw = self.api.get_manufacturer_code()
+            info.manufacturer_code = raw.hex().upper()
+        except Exception:
+            _LOGGER.debug("Could not fetch manufacturer code", exc_info=True)
+        time.sleep(self.api.internal_xmit_interval)
+
+        try:
+            info.echonet_version = self.api.get_standard_version()
+        except Exception:
+            _LOGGER.debug("Could not fetch ECHONET version", exc_info=True)
+
+        return info
+
+    async def _async_setup(self) -> None:
+        await self.hass.async_add_executor_job(self.api.open)
+        self.device_info_data = await self.hass.async_add_executor_job(
+            self._fetch_device_info
         )
-        self.retry_count = retry_count
-        self._is_connected = False
-        self._connection_lock = asyncio.Lock()
-        self._last_diagnostic_update = None
-        self._diagnostic_info = None
 
-    async def _try_connect(self) -> None:
-        """Connect to the meter and set the connection status."""
-        if not self._is_connected:
-            _LOGGER.info("Try connecting to B-Route meter")
-            try:
-                # Use shorter timeout to avoid blocking setup for too long
-                await asyncio.wait_for(
-                    self.hass.async_add_executor_job(self.adapter.connect),
-                    timeout=30.0,  # 30秒超时，相比默认更短
-                )
-                self._is_connected = True
-                _LOGGER.info("Successfully connected to B-Route meter")
-            except asyncio.TimeoutError:
-                self._is_connected = False
-                _LOGGER.error("Connection to B-Route meter timed out after 30 seconds")
-                raise UpdateFailed("Connection to B-Route meter timed out") from None
-            except Exception as err:
-                self._is_connected = False
-                _LOGGER.error("Failed to connect to B-Route meter: %s", err)
-                raise UpdateFailed("Failed to connect to B-Route meter") from err
+    def _reopen(self) -> None:
+        """Close and reopen the momonga session."""
+        _LOGGER.warning("Attempting to reopen momonga session")
+        try:
+            self.api.close()
+        except Exception:
+            _LOGGER.debug("Error closing momonga (ignored)", exc_info=True)
 
-    def _raise_update_failed(self, message: str) -> None:
-        """Raise an UpdateFailed exception with the given message."""
-        raise UpdateFailed(message)
+        # Recreate the Momonga instance to ensure clean state
+        self.api = Momonga(dev=self.device, rbid=self.bid, pwd=self._password)
+        self.api.open()
+        _LOGGER.info("Momonga session reopened successfully")
 
-    async def _update_diagnostic_info(self) -> None:
-        """Update diagnostic information if needed."""
-        now = datetime.now()
+    def _get_data(self) -> BRouteData:
+        """Get the data from API."""
+        current = self.api.get_instantaneous_current()
+        data = BRouteData(
+            instantaneous_current_r_phase=current["r phase current"],
+            instantaneous_current_t_phase=current["t phase current"],
+            instantaneous_power=self.api.get_instantaneous_power(),
+            total_consumption=self.api.get_measured_cumulative_energy(),
+        )
 
-        # Check if diagnostic info needs update
-        if (
-            self._last_diagnostic_update is None
-            or (now.timestamp() - self._last_diagnostic_update)
-            >= DIAGNOSTIC_UPDATE_INTERVAL
-        ):
-            try:
-                if self._is_connected:
-                    self._diagnostic_info = await self.hass.async_add_executor_job(
-                        self.adapter.get_diagnostic_info
-                    )
-                    self._last_diagnostic_update = now.timestamp()
-                    _LOGGER.debug("Successfully updated diagnostic information")
-            except Exception as err:
-                _LOGGER.warning("Failed to update diagnostic information: %s", err)
+        # Voltage (R-phase and T-phase)
+        try:
+            time.sleep(self.api.internal_xmit_interval)
+            voltage = self.api.get_instantaneous_voltage()
+            data.instantaneous_voltage_r_phase = voltage["r phase voltage"]
+            data.instantaneous_voltage_t_phase = voltage["t phase voltage"]
+        except MomongaError:
+            _LOGGER.debug("Could not fetch instantaneous voltage", exc_info=True)
 
-    async def _async_update_data(self) -> Mapping[str, Any]:
-        """Get the latest data from the B-route meter.
+        # Reverse cumulative energy (solar sell-back)
+        try:
+            time.sleep(self.api.internal_xmit_interval)
+            data.total_consumption_reverse = self.api.get_measured_cumulative_energy(
+                reverse=True
+            )
+        except MomongaError:
+            _LOGGER.debug("Could not fetch reverse cumulative energy", exc_info=True)
 
-        This will connect to the meter if not already connected,
-        then read data from the meter.
+        try:
+            time.sleep(self.api.internal_xmit_interval)
+            fixed = self.api.get_cumulative_energy_measured_at_fixed_time()
+            data.meter_timestamp = fixed["timestamp"]
+        except MomongaError:
+            _LOGGER.debug("Could not fetch fixed-time timestamp", exc_info=True)
 
-        Returns:
-            Mapping[str, Any]: A dictionary of sensor data from the meter.
+        try:
+            time.sleep(self.api.internal_xmit_interval)
+            fixed_rev = self.api.get_cumulative_energy_measured_at_fixed_time(
+                reverse=True
+            )
+            data.meter_timestamp_reverse = fixed_rev["timestamp"]
+        except MomongaError:
+            _LOGGER.debug("Could not fetch fixed-time timestamp (reverse)", exc_info=True)
+
+        try:
+            time.sleep(self.api.internal_xmit_interval)
+            data.fault_status = self.api.get_fault_status()
+        except MomongaError:
+            _LOGGER.debug("Could not fetch fault status", exc_info=True)
+
+        return data
+
+    def _get_data_with_recovery(self) -> BRouteData:
+        """Get data, automatically recovering from session failures.
+
+        Catches ALL exceptions (not just MomongaNeedToReopen) because the
+        underlying Wi-SUN adapter can throw serial.SerialException, OSError,
+        or other non-MomongaError exceptions when the connection drops.
         """
-        # Check if we have previous data that can be used as fallback
-        previous_data = self.data
-        if previous_data:
-            _LOGGER.debug("Using previous data as fallback if update fails")
+        # If we've been failing repeatedly, preemptively reopen before even trying
+        if self._consecutive_failures >= CONSECUTIVE_FAILURES_BEFORE_PREEMPTIVE_REOPEN:
+            _LOGGER.info(
+                "Preemptive reopen after %d consecutive failures",
+                self._consecutive_failures,
+            )
+            try:
+                self._reopen()
+            except Exception:
+                _LOGGER.warning("Preemptive reopen failed, will try data fetch anyway", exc_info=True)
 
-        # Prepare an empty result
-        result = {}
-
-        # First, try to update diagnostic info if needed
-        await self._update_diagnostic_info()
-        if self._diagnostic_info:
-            result["diagnostic_info"] = self._diagnostic_info
-
-            # 添加 RSSI 数据作为单独的传感器
-            if self._diagnostic_info.rssi is not None:
-                result["rssi"] = self._diagnostic_info.rssi
-
-        # Initialize a counter to track update attempts
-        update_attempt = 0
-        max_attempts = self.retry_count
-
-        # Keep trying to fetch data until we succeed or reach max attempts
-        while update_attempt < max_attempts:
-            update_attempt += 1
-            _LOGGER.debug(
-                "Fetching data from B-Route meter (attempt %d/%d)",
-                update_attempt,
-                max_attempts,
+        try:
+            data = self._get_data()
+            self._consecutive_failures = 0
+            return data
+        except Exception as initial_err:
+            _LOGGER.warning(
+                "Data fetch failed (%s: %s). Will attempt up to %d reopens.",
+                type(initial_err).__name__,
+                initial_err,
+                MAX_REOPEN_ATTEMPTS,
             )
 
-            # Record start time to measure how long the update takes
-            start_time = datetime.now().timestamp()
-            success = False
-            meter_data = None
-
-            # First, make sure we're connected
-            if not self._is_connected:
+            last_error: Exception = initial_err
+            for attempt in range(1, MAX_REOPEN_ATTEMPTS + 1):
+                backoff = min(REOPEN_BACKOFF_BASE * (2 ** (attempt - 1)), REOPEN_BACKOFF_MAX)
+                time.sleep(backoff)
                 try:
-                    async with self._connection_lock:
-                        await self._try_connect()
-                except UpdateFailed as e:
+                    self._reopen()
+                    data = self._get_data()
+                    _LOGGER.info(
+                        "Recovery successful on attempt %d/%d",
+                        attempt,
+                        MAX_REOPEN_ATTEMPTS,
+                    )
+                    self._consecutive_failures = 0
+                    return data
+                except Exception as err:
+                    last_error = err
                     _LOGGER.warning(
-                        "Update attempt %d/%d failed: %s. Retrying in %d seconds",
-                        update_attempt,
-                        max_attempts,
-                        e,
-                        update_attempt,
-                    )
-                    # 快速失败，减少初始化时间
-                    if update_attempt == 1:
-                        await asyncio.sleep(1)  # 第一次失败只等待1秒
-                    else:
-                        await asyncio.sleep(update_attempt)
-                    continue
-
-            # Now try to get data from the meter
-            try:
-                meter_data = await self.hass.async_add_executor_job(
-                    self.adapter.get_data
-                )
-
-                # 检查数据是否有效 - 所有主要值都为 None 可能表示通信问题
-                all_none = all(
-                    getattr(meter_data, attr) is None
-                    for attr in ["power", "current", "voltage", "forward", "reverse"]
-                )
-
-                if all_none:
-                    _LOGGER.warning(
-                        "All meter readings are None. Check device communication."
-                    )
-                    if update_attempt < max_attempts:
-                        # 重置连接并尝试重新连接
-                        self._is_connected = False
-                        try:
-                            async with self._connection_lock:
-                                await self._try_connect()
-                        except Exception as e:
-                            _LOGGER.error("Failed to reconnect: %s", e)
-                        # 减少等待时间
-                        await asyncio.sleep(min(update_attempt, 3))  # 最多等待3秒
-                        continue
-                    else:
-                        _LOGGER.warning(
-                            "After %d attempts, still no valid readings", max_attempts
-                        )
-                else:
-                    success = True
-
-            except Exception as e:
-                _LOGGER.error("Error fetching data from B-Route meter: %s", e)
-                self._is_connected = False  # 标记为断开连接，下次会尝试重新连接
-                if update_attempt < max_attempts:
-                    # 快速失败，减少初始化时间
-                    await asyncio.sleep(min(update_attempt, 3))  # 最多等待3秒
-                    continue
-                elif previous_data:
-                    # 如果有之前的数据，则使用之前的数据
-                    _LOGGER.warning(
-                        "Using previous data due to consecutive failures after %d attempts",
-                        max_attempts,
-                    )
-                    return previous_data
-                else:
-                    _LOGGER.error("No previous data available as fallback")
-                    self._raise_update_failed(
-                        f"Failed to fetch data from B-Route meter after {max_attempts} attempts: {e}"
+                        "Reopen attempt %d/%d failed (%s: %s)",
+                        attempt,
+                        MAX_REOPEN_ATTEMPTS,
+                        type(err).__name__,
+                        err,
                     )
 
-            # Calculate how long the update took
-            end_time = datetime.now().timestamp()
-            elapsed_seconds = end_time - start_time
+            self._consecutive_failures += 1
+            raise UpdateFailed(
+                f"Failed to recover after {MAX_REOPEN_ATTEMPTS} attempts"
+                + f" ({self._consecutive_failures} consecutive poll failures)"
+            ) from last_error
 
-            _LOGGER.debug(
-                "Finished fetching B-Route Smart Meter data in %.3f seconds (success: %s)",
-                elapsed_seconds,
-                success,
+    async def _async_update_data(self) -> BRouteData:
+        """Update data with automatic session recovery."""
+        try:
+            return await self.hass.async_add_executor_job(
+                self._get_data_with_recovery
             )
-
-            # If we successfully got data, convert it to a format suitable for sensors
-            if meter_data:
-                # Add meter readings to result
-                if meter_data.power is not None:
-                    result["e7_power"] = meter_data.power
-                if meter_data.current is not None:
-                    result["e8_current"] = meter_data.current
-                    # 添加单相电流值到结果中
-                    if (
-                        hasattr(meter_data, "r_phase_current")
-                        and meter_data.r_phase_current is not None
-                    ):
-                        result["r_phase_current"] = meter_data.r_phase_current
-                    if (
-                        hasattr(meter_data, "t_phase_current")
-                        and meter_data.t_phase_current is not None
-                    ):
-                        result["t_phase_current"] = meter_data.t_phase_current
-                if meter_data.voltage is not None:
-                    result["e9_voltage"] = meter_data.voltage
-                if meter_data.forward is not None:
-                    result["ea_forward"] = meter_data.forward
-                if meter_data.reverse is not None:
-                    result["eb_reverse"] = meter_data.reverse
-
-                # Add timestamps if available
-                if (
-                    hasattr(meter_data, "forward_timestamp")
-                    and meter_data.forward_timestamp
-                ):
-                    result["ea_forward_timestamp"] = meter_data.forward_timestamp
-                if (
-                    hasattr(meter_data, "reverse_timestamp")
-                    and meter_data.reverse_timestamp
-                ):
-                    result["eb_reverse_timestamp"] = meter_data.reverse_timestamp
-
-                # 添加新的传感器数据
-                # 根据设备特性和支持情况添加数据
-                # 操作状态信息 - 只有当设备明确标记了支持才添加这些传感器
-                if meter_data.has_operational_info:
-                    # 操作状态
-                    if meter_data.operation_status is not None:
-                        result["operation_status"] = (
-                            "ON" if meter_data.operation_status else "OFF"
-                        )
-                    # 错误状态
-                    if meter_data.error_status is not None:
-                        result["error_status"] = (
-                            "Error" if meter_data.error_status else "Normal"
-                        )
-                    # 设备类型
-                    if meter_data.meter_type is not None:
-                        result["meter_type"] = meter_data.meter_type
-
-                # 限制信息
-                if meter_data.has_limit_info and meter_data.current_limit is not None:
-                    result["current_limit"] = meter_data.current_limit
-
-                # 异常检测信息
-                if (
-                    meter_data.has_abnormality_detection
-                    and meter_data.detected_abnormality is not None
-                ):
-                    result["detected_abnormality"] = meter_data.detected_abnormality
-
-                # 电量单位
-                if meter_data.power_unit is not None:
-                    result["power_unit"] = meter_data.power_unit
-
-            # If we successfully got any readings, break out of the retry loop
-            if success:
-                break
-
-        # If result is still empty, use previous data if available
-        if not result and previous_data:
-            _LOGGER.warning("No data returned, using previous data")
-            return previous_data
-
-        # Always include diagnostic info if available, even if other readings failed
-        if self._diagnostic_info and "diagnostic_info" not in result:
-            result["diagnostic_info"] = self._diagnostic_info
-
-            # 添加 RSSI 数据作为单独的传感器
-            if self._diagnostic_info.rssi is not None:
-                result["rssi"] = self._diagnostic_info.rssi
-
-        return result
-
-    async def async_close(self) -> None:
-        """Close the adapter connection when coordinator is stopped."""
-        if self._is_connected:
-            try:
-                await self.hass.async_add_executor_job(self.adapter.close)
-            except Exception as err:
-                _LOGGER.error("Error closing adapter connection: %s", err)
-            finally:
-                self._is_connected = False
+        except UpdateFailed:
+            raise
+        except Exception as error:
+            self._consecutive_failures += 1
+            raise UpdateFailed(
+                f"Unexpected error ({type(error).__name__}): {error}"
+            ) from error

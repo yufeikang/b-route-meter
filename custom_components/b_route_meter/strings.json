@@ -1,121 +1,63 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "B-Route Meter Configuration",
-                "description": "Set up your B-Route meter connection",
-                "data": {
-                    "route_b_id": "B-Route ID",
-                    "route_b_pwd": "B-Route Password",
-                    "serial_port": "Serial Port",
-                    "retry_count": "Retry Count",
-                    "model": "Adapter Model"
-                },
-                "data_description": {
-                    "route_b_id": "32-digit authentication ID issued when applying for B-Route service",
-                    "route_b_pwd": "12-digit password issued when applying for B-Route service",
-                    "serial_port": "USB dongle serial port (e.g., /dev/ttyUSB0 for Linux, COM3 for Windows)",
-                    "retry_count": "Number of retry attempts on communication error (1-10)",
-                    "model": "Select your B-Route adapter model (BP35A1 or BP35C2)"
-                }
-            },
-            "reconfigure": {
-                "title": "Reconfigure B-Route Meter",
-                "description": "Update your B-Route meter connection settings",
-                "data": {
-                    "route_b_id": "B-Route ID",
-                    "route_b_pwd": "B-Route Password",
-                    "serial_port": "Serial Port",
-                    "retry_count": "Retry Count",
-                    "model": "Adapter Model"
-                },
-                "data_description": {
-                    "route_b_id": "32-digit authentication ID issued when applying for B-Route service",
-                    "route_b_pwd": "12-digit password issued when applying for B-Route service",
-                    "serial_port": "USB dongle serial port (e.g., /dev/ttyUSB0 for Linux, COM3 for Windows)",
-                    "retry_count": "Number of retry attempts on communication error (1-10)",
-                    "model": "Select your B-Route adapter model (BP35A1 or BP35C2)"
-                }
-            }
-        },
-        "error": {
-            "invalid_retry_count": "Please enter a number between 1 and 10",
-            "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
-        },
-        "abort": {
-            "already_configured": "Device is already configured",
-            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
-        }
+  "config": {
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "B-Route Meter Options",
-                "description": "Update your B-Route meter settings",
-                "data": {
-                    "route_b_id": "B-Route ID",
-                    "route_b_pwd": "B-Route Password",
-                    "serial_port": "Serial Port",
-                    "retry_count": "Retry Count"
-                },
-                "data_description": {
-                    "route_b_id": "32-digit authentication ID issued when applying for B-Route service",
-                    "route_b_pwd": "12-digit password issued when applying for B-Route service",
-                    "serial_port": "USB dongle serial port (e.g., /dev/ttyUSB0 for Linux, COM3 for Windows)",
-                    "retry_count": "Number of retry attempts on communication error (1-10)"
-                }
-            }
-        },
-        "error": {
-            "invalid_retry_count": "Please enter a number between 1 and 10",
-            "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
-        }
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
     },
-    "entity": {
-        "sensor": {
-            "diagnostic_info": {
-                "name": "Diagnostic Info"
-            },
-            "instantaneous_power": {
-                "name": "Instantaneous Power"
-            },
-            "instantaneous_current": {
-                "name": "Instantaneous Current"
-            },
-            "instantaneous_voltage": {
-                "name": "Instantaneous Voltage"
-            },
-            "cumulative_forward": {
-                "name": "Cumulative Forward Energy"
-            },
-            "cumulative_reverse": {
-                "name": "Cumulative Reverse Energy"
-            },
-            "operation_status": {
-                "name": "Operation Status"
-            },
-            "error_status": {
-                "name": "Error Status"
-            },
-            "current_limit": {
-                "name": "Current Limit"
-            },
-            "meter_type": {
-                "name": "Meter Type"
-            },
-            "detected_abnormality": {
-                "name": "Detected Abnormality"
-            },
-            "power_unit": {
-                "name": "Power Unit"
-            },
-            "signal_strength": {
-                "name": "Signal Strength"
-            }
+    "step": {
+      "user": {
+        "data": {
+          "device": "[%key:common::config_flow::data::device%]",
+          "id": "B Route ID",
+          "password": "[%key:common::config_flow::data::password%]"
+        },
+        "data_description": {
+          "device": "[%key:common::config_flow::data::device%]",
+          "id": "B Route ID",
+          "password": "[%key:common::config_flow::data::password%]"
         }
+      }
     }
+  },
+  "entity": {
+    "sensor": {
+      "instantaneous_current_r_phase": {
+        "name": "Instantaneous current R phase"
+      },
+      "instantaneous_current_t_phase": {
+        "name": "Instantaneous current T phase"
+      },
+      "instantaneous_power": {
+        "name": "Instantaneous power"
+      },
+      "total_consumption": {
+        "name": "Total consumption"
+      },
+      "total_consumption_reverse": {
+        "name": "Total consumption (reverse)"
+      },
+      "instantaneous_voltage_r_phase": {
+        "name": "Instantaneous voltage R phase"
+      },
+      "instantaneous_voltage_t_phase": {
+        "name": "Instantaneous voltage T phase"
+      },
+      "fault_status": {
+        "name": "Fault status"
+      },
+      "serial_number": {
+        "name": "Serial number"
+      },
+      "manufacturer_code": {
+        "name": "Manufacturer code"
+      },
+      "echonet_version": {
+        "name": "ECHONET Lite version"
+      }
+    }
+  }
 }

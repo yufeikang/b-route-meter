@@ -1,54 +1,63 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "Bルートメーター設定",
-                "description": "Bルートメーターの接続設定を行います",
-                "data": {
-                    "route_b_id": "Bルート認証ID",
-                    "route_b_pwd": "Bルートパスワード",
-                    "serial_port": "シリアルポート",
-                    "retry_count": "再試行回数"
-                },
-                "data_description": {
-                    "route_b_id": "Bルート認証IDのお申込み時に発行される英数字32桁の認証IDです",
-                    "route_b_pwd": "Bルート認証IDのお申込み時に発行される英数字12桁のパスワードです",
-                    "serial_port": "USBドングルのシリアルポート（Linuxの場合は/dev/ttyUSB0、Windowsの場合はCOM3など）",
-                    "retry_count": "通信エラー時の再試行回数（1-10）"
-                }
-            }
-        },
-        "error": {
-            "invalid_retry_count": "1から10の間の数字を入力してください",
-            "cannot_connect": "接続に失敗しました",
-            "invalid_auth": "認証に失敗しました",
-            "unknown": "予期せぬエラーが発生しました"
-        }
+  "config": {
+    "abort": {
+      "already_configured": "デバイスは既に設定済みです"
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "Bルートメーター設定",
-                "description": "Bルートメーターの設定を更新します",
-                "data": {
-                    "route_b_id": "Bルート認証ID",
-                    "route_b_pwd": "Bルートパスワード",
-                    "serial_port": "シリアルポート",
-                    "retry_count": "再試行回数"
-                },
-                "data_description": {
-                    "route_b_id": "Bルート認証IDのお申込み時に発行される英数字32桁の認証IDです",
-                    "route_b_pwd": "Bルート認証IDのお申込み時に発行される英数字12桁のパスワードです",
-                    "serial_port": "USBドングルのシリアルポート（Linuxの場合は/dev/ttyUSB0、Windowsの場合はCOM3など）",
-                    "retry_count": "通信エラー時の再試行回数（1-10）"
-                }
-            }
+    "error": {
+      "cannot_connect": "接続に失敗しました",
+      "invalid_auth": "認証に失敗しました",
+      "unknown": "予期しないエラー"
+    },
+    "step": {
+      "user": {
+        "data": {
+          "device": "デバイス",
+          "id": "Bルート認証ID",
+          "password": "パスワード"
         },
-        "error": {
-            "invalid_retry_count": "1から10の間の数字を入力してください",
-            "cannot_connect": "接続に失敗しました",
-            "invalid_auth": "認証に失敗しました",
-            "unknown": "予期せぬエラーが発生しました"
+        "data_description": {
+          "device": "Wi-SUNアダプターのUSBシリアルデバイス",
+          "id": "Bルートサービスの32桁認証ID",
+          "password": "Bルートサービスのパスワード"
         }
+      }
     }
+  },
+  "entity": {
+    "sensor": {
+      "instantaneous_current_r_phase": {
+        "name": "瞬時電流 R相"
+      },
+      "instantaneous_current_t_phase": {
+        "name": "瞬時電流 T相"
+      },
+      "instantaneous_power": {
+        "name": "瞬時電力"
+      },
+      "total_consumption": {
+        "name": "積算電力量"
+      },
+      "total_consumption_reverse": {
+        "name": "積算電力量（逆方向）"
+      },
+      "instantaneous_voltage_r_phase": {
+        "name": "瞬時電圧 R相"
+      },
+      "instantaneous_voltage_t_phase": {
+        "name": "瞬時電圧 T相"
+      },
+      "fault_status": {
+        "name": "異常状態"
+      },
+      "serial_number": {
+        "name": "シリアル番号"
+      },
+      "manufacturer_code": {
+        "name": "メーカーコード"
+      },
+      "echonet_version": {
+        "name": "ECHONET Liteバージョン"
+      }
+    }
+  }
 }

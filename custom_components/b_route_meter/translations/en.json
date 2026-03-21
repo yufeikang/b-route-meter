@@ -1,54 +1,63 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "B-Route Meter Configuration",
-                "description": "Set up your B-Route meter connection",
-                "data": {
-                    "route_b_id": "B-Route ID",
-                    "route_b_pwd": "B-Route Password",
-                    "serial_port": "Serial Port",
-                    "retry_count": "Retry Count"
-                },
-                "data_description": {
-                    "route_b_id": "32-digit authentication ID issued when applying for B-Route service",
-                    "route_b_pwd": "12-digit password issued when applying for B-Route service",
-                    "serial_port": "USB dongle serial port (e.g., /dev/ttyUSB0 for Linux, COM3 for Windows)",
-                    "retry_count": "Number of retry attempts on communication error (1-10)"
-                }
-            }
-        },
-        "error": {
-            "invalid_retry_count": "Please enter a number between 1 and 10",
-            "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
-        }
+  "config": {
+    "abort": {
+      "already_configured": "Device is already configured"
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "B-Route Meter Options",
-                "description": "Update your B-Route meter settings",
-                "data": {
-                    "route_b_id": "B-Route ID",
-                    "route_b_pwd": "B-Route Password",
-                    "serial_port": "Serial Port",
-                    "retry_count": "Retry Count"
-                },
-                "data_description": {
-                    "route_b_id": "32-digit authentication ID issued when applying for B-Route service",
-                    "route_b_pwd": "12-digit password issued when applying for B-Route service",
-                    "serial_port": "USB dongle serial port (e.g., /dev/ttyUSB0 for Linux, COM3 for Windows)",
-                    "retry_count": "Number of retry attempts on communication error (1-10)"
-                }
-            }
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error"
+    },
+    "step": {
+      "user": {
+        "data": {
+          "device": "Device",
+          "id": "B Route ID",
+          "password": "Password"
         },
-        "error": {
-            "invalid_retry_count": "Please enter a number between 1 and 10",
-            "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
+        "data_description": {
+          "device": "USB serial device for Wi-SUN adapter",
+          "id": "32-digit authentication ID for B-Route service",
+          "password": "Password for B-Route service"
         }
+      }
     }
+  },
+  "entity": {
+    "sensor": {
+      "instantaneous_current_r_phase": {
+        "name": "Instantaneous current R phase"
+      },
+      "instantaneous_current_t_phase": {
+        "name": "Instantaneous current T phase"
+      },
+      "instantaneous_power": {
+        "name": "Instantaneous power"
+      },
+      "total_consumption": {
+        "name": "Total consumption"
+      },
+      "total_consumption_reverse": {
+        "name": "Total consumption (reverse)"
+      },
+      "instantaneous_voltage_r_phase": {
+        "name": "Instantaneous voltage R phase"
+      },
+      "instantaneous_voltage_t_phase": {
+        "name": "Instantaneous voltage T phase"
+      },
+      "fault_status": {
+        "name": "Fault status"
+      },
+      "serial_number": {
+        "name": "Serial number"
+      },
+      "manufacturer_code": {
+        "name": "Manufacturer code"
+      },
+      "echonet_version": {
+        "name": "ECHONET Lite version"
+      }
+    }
+  }
 }
