@@ -12,7 +12,6 @@ from homeassistant.components.sensor import (
 from homeassistant.const import (
     EntityCategory,
     UnitOfElectricCurrent,
-    UnitOfElectricPotential,
     UnitOfEnergy,
     UnitOfPower,
 )
@@ -29,8 +28,6 @@ from .const import (
     ATTR_API_INSTANTANEOUS_CURRENT_R_PHASE,
     ATTR_API_INSTANTANEOUS_CURRENT_T_PHASE,
     ATTR_API_INSTANTANEOUS_POWER,
-    ATTR_API_INSTANTANEOUS_VOLTAGE_R_PHASE,
-    ATTR_API_INSTANTANEOUS_VOLTAGE_T_PHASE,
     ATTR_API_MANUFACTURER_CODE,
     ATTR_API_SERIAL_NUMBER,
     ATTR_API_TOTAL_CONSUMPTION,
@@ -87,22 +84,6 @@ SENSOR_DESCRIPTIONS = (
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_accessor=lambda data: data.total_consumption_reverse,
-    ),
-    SensorEntityDescriptionWithValueAccessor(
-        key=ATTR_API_INSTANTANEOUS_VOLTAGE_R_PHASE,
-        translation_key=ATTR_API_INSTANTANEOUS_VOLTAGE_R_PHASE,
-        device_class=SensorDeviceClass.VOLTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-        value_accessor=lambda data: data.instantaneous_voltage_r_phase,
-    ),
-    SensorEntityDescriptionWithValueAccessor(
-        key=ATTR_API_INSTANTANEOUS_VOLTAGE_T_PHASE,
-        translation_key=ATTR_API_INSTANTANEOUS_VOLTAGE_T_PHASE,
-        device_class=SensorDeviceClass.VOLTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-        value_accessor=lambda data: data.instantaneous_voltage_t_phase,
     ),
 )
 

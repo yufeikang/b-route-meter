@@ -1,7 +1,7 @@
 {
   "domain": "b_route_meter",
   "name": "B-Route Smart Meter",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "codeowners": ["@yufeikang"],
   "config_flow": true,
   "dependencies": ["usb"],
@@ -13,5 +13,5 @@
     "momonga.momonga_session_manager",
     "momonga.sk_wrapper_logger"
   ],
-  "requirements": ["pyserial==3.5", "momonga @ git+https://github.com/yufeikang/momonga.git@main"]
+  "requirements": ["momonga @ git+https://github.com/yufeikang/momonga.git@v0.4.0"]
 }

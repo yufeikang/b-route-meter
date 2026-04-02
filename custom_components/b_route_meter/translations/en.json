@@ -23,6 +23,18 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Scan interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval": "How often to poll the smart meter (30-3600 seconds)"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "instantaneous_current_r_phase": {
@@ -39,12 +51,6 @@
       },
       "total_consumption_reverse": {
         "name": "Total consumption (reverse)"
-      },
-      "instantaneous_voltage_r_phase": {
-        "name": "Instantaneous voltage R phase"
-      },
-      "instantaneous_voltage_t_phase": {
-        "name": "Instantaneous voltage T phase"
       },
       "fault_status": {
         "name": "Fault status"

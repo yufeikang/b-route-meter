@@ -9,12 +9,19 @@ from serial.tools.list_ports_common import ListPortInfo
 import voluptuous as vol
 
 from homeassistant.components.usb import get_serial_by_id, human_readable_device_name
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_DEVICE, CONF_ID, CONF_PASSWORD
 from homeassistant.core import callback
 from homeassistant.helpers.service_info.usb import UsbServiceInfo
 
-from .const import DOMAIN, ENTRY_TITLE
+from .const import (
+    CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    ENTRY_TITLE,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,12 +43,43 @@ def _human_readable_device_name(port: UsbServiceInfo | ListPortInfo) -> str:
     )
 
 
+class BRouteOptionsFlow(OptionsFlow):
+    """Handle options for B Route Smart Meter."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current = self.config_entry.options.get(
+            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
+                        int, vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)
+                    ),
+                }
+            ),
+        )
+
+
 class BRouteConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for B Route Smart Meter."""
 
     VERSION = 1
 
     device: UsbServiceInfo | None = None
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Get the options flow."""
+        return BRouteOptionsFlow()
 
     @callback
     def _get_discovered_device_id_and_name(

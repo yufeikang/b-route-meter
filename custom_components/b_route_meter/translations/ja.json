@@ -23,6 +23,18 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "取得間隔（秒）"
+        },
+        "data_description": {
+          "scan_interval": "スマートメーターのポーリング間隔（30〜3600秒）"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "instantaneous_current_r_phase": {
@@ -39,12 +51,6 @@
       },
       "total_consumption_reverse": {
         "name": "積算電力量（逆方向）"
-      },
-      "instantaneous_voltage_r_phase": {
-        "name": "瞬時電圧 R相"
-      },
-      "instantaneous_voltage_t_phase": {
-        "name": "瞬時電圧 T相"
       },
       "fault_status": {
         "name": "異常状態"
