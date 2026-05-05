@@ -208,5 +208,8 @@ class SmartMeterBRouteDiagnosticSensor(
             return self.coordinator.data.fault_status
         attr = self._STATIC_KEY_MAP.get(key)
         if attr:
-            return getattr(self.coordinator.device_info_data, attr, None)
+            v = getattr(self.coordinator.device_info_data, attr, None)
+            if isinstance(v, str):
+                v = v.replace("\x00", "").strip() or None
+            return v
         return None

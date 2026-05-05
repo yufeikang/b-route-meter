@@ -80,7 +80,10 @@ class BRouteUpdateCoordinator(DataUpdateCoordinator[BRouteData]):
         """Fetch static device info (called once at setup)."""
         info = BRouteDeviceInfo()
         try:
-            info.serial_number = self.api.get_serial_number()
+            sn = self.api.get_serial_number()
+            # B-route protocol returns a fixed-width field NUL-padded; Postgres
+            # rejects NUL in TEXT, so strip before exposing as state.
+            info.serial_number = sn.replace("\x00", "").strip() if isinstance(sn, str) else sn
         except MomongaError:
             _LOGGER.debug("Could not fetch serial number", exc_info=True)
         time.sleep(self.api.internal_xmit_interval)
