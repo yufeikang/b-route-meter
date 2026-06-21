@@ -1,0 +1,2 @@
+ls: cannot access '/dev/ttyUSB0': No such file or directory
+ttyUSB0 gone

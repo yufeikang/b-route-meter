@@ -1,0 +1,10 @@
+{
+  "entity_id": "sensor.route_b_smart_meter_instantaneous_power",
+  "state": "154",
+  "last_changed": "2026-05-12T17:22:24.840083+00:00",
+  "last_updated": "2026-05-12T17:22:24.840083+00:00",
+  "attr.state_class": "measurement",
+  "attr.unit_of_measurement": "W",
+  "attr.device_class": "power",
+  "attr.friendly_name": "B Route Smart Meter Instantaneous power"
+}

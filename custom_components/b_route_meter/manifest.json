@@ -13,5 +13,5 @@
     "momonga.momonga_session_manager",
     "momonga.sk_wrapper_logger"
   ],
-  "requirements": ["momonga @ git+https://github.com/yufeikang/momonga.git@v0.4.0"]
+  "requirements": ["momonga @ git+https://github.com/nbtk/momonga.git@9037771a574e553a87cdc130fecaaa9f104ef18a"]
 }

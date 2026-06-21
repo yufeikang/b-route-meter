@@ -63,7 +63,7 @@ class BRouteUpdateCoordinator(DataUpdateCoordinator[BRouteData]):
             dev=self.device,
             rbid=self.bid,
             pwd=self._password,
-            auto_reopen=True,
+            reopen_delays=[10, 60, 300, 600],
         )
         self.device_info_data = BRouteDeviceInfo()
 
